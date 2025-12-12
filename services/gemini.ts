@@ -1,8 +1,7 @@
 import { GoogleGenAI, Schema, Type } from "@google/genai";
-import { Attachment, Suggestion } from "../types";
+import { Attachment, Suggestion, WritingContext, GoalSuggestion } from "../types";
 import { MODEL_FAST, MODEL_QUALITY, SYSTEM_INSTRUCTION_EDITOR, SYSTEM_INSTRUCTION_PROACTIVE } from "../constants";
 
-// Helper to ensure API Key is present
 const getClient = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
@@ -12,24 +11,15 @@ const getClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-/**
- * Generates content based on a prompt and optional attachments.
- * Used for "Write something for me" feature.
- */
 export const generateDraft = async (
   prompt: string, 
   attachments: Attachment[] = []
 ): Promise<string> => {
   try {
     const ai = getClient();
-    
-    // Prepare contents
     const parts: any[] = [{ text: prompt }];
     
-    // Add attachments
     attachments.forEach(att => {
-      // Basic handling for text/image. 
-      // For simplicity in this demo, we assume images or text compatible with inlineData
       if (att.type.startsWith('image/')) {
         parts.push({
           inlineData: {
@@ -38,7 +28,6 @@ export const generateDraft = async (
           }
         });
       } else {
-        // For text files, we append content to the prompt part or as a separate text part
         parts.push({ text: `\n\n[Attachment: ${att.name}]\n${atob(att.data)}` });
       }
     });
@@ -58,25 +47,21 @@ export const generateDraft = async (
   }
 };
 
-/**
- * Iterates on a specific selection of text.
- * Used for "Inline changes".
- */
 export const iterateSelection = async (
   selection: string,
   instruction: string,
-  context: string // The surrounding text can be useful context
+  context: string
 ): Promise<string> => {
   try {
     const ai = getClient();
     const prompt = `
-    Context of the document: "${context.substring(0, 500)}..."
+    Full Document Context (for tone reference): "${context.substring(0, 2000)}..."
     
-    The user wants to change this specific text: "${selection}"
+    Target Text to Change: "${selection}"
     
-    Instruction: ${instruction}
+    User Instruction: ${instruction}
     
-    Return ONLY the rewritten text to replace the selection. Do not add quotes or explanations.
+    Return ONLY the rewritten text. No markdown, no quotes.
     `;
 
     const response = await ai.models.generateContent({
@@ -94,11 +79,8 @@ export const iterateSelection = async (
   }
 };
 
-/**
- * Proactively analyzes text for suggestions.
- */
-export const analyzeText = async (text: string): Promise<Suggestion | null> => {
-  if (!text || text.length < 50) return null;
+export const analyzeText = async (fullText: string, context?: WritingContext): Promise<Suggestion | null> => {
+  if (!fullText || fullText.length < 50) return null;
 
   try {
     const ai = getClient();
@@ -107,16 +89,43 @@ export const analyzeText = async (text: string): Promise<Suggestion | null> => {
       type: Type.OBJECT,
       properties: {
         hasSuggestion: { type: Type.BOOLEAN },
-        reason: { type: Type.STRING },
+        originalText: { 
+          type: Type.STRING, 
+          description: "The exact substring from the source text that should be replaced. Must match exactly." 
+        },
         suggestedText: { type: Type.STRING },
-        type: { type: Type.STRING, enum: ['improvement', 'grammar', 'idea'] }
+        reason: { type: Type.STRING },
+        type: { type: Type.STRING, enum: ['style', 'grammar', 'clarity', 'flow', 'idea'] }
       },
       required: ['hasSuggestion']
     };
 
+    const contextLimit = 30000;
+    const textToAnalyze = fullText.length > contextLimit 
+      ? fullText.substring(fullText.length - contextLimit) 
+      : fullText;
+
+    // Construct the context-aware prompt
+    let contextBlock = "";
+    if (context) {
+      contextBlock = `
+      WRITING CONTEXT:
+      - Target Audience: ${context.audience || 'General'}
+      - Desired Tone: ${context.tone || 'Neutral'}
+      - Primary Goal: ${context.goal || 'Inform'}
+      `;
+    }
+
+    const contents = `
+    ${contextBlock}
+
+    DOCUMENT CONTENT TO ANALYZE:
+    ${textToAnalyze}
+    `;
+
     const response = await ai.models.generateContent({
       model: MODEL_FAST,
-      contents: `Analyze this text segment: "${text.substring(text.length - 1000)}"`, // Analyze last 1000 chars
+      contents: contents,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION_PROACTIVE,
         responseMimeType: "application/json",
@@ -126,11 +135,12 @@ export const analyzeText = async (text: string): Promise<Suggestion | null> => {
 
     const result = JSON.parse(response.text || "{}");
     
-    if (result.hasSuggestion) {
+    if (result.hasSuggestion && result.originalText && result.suggestedText) {
       return {
         id: Date.now().toString(),
-        reason: result.reason,
+        originalText: result.originalText,
         suggestedText: result.suggestedText,
+        reason: result.reason,
         type: result.type
       };
     }
@@ -138,7 +148,53 @@ export const analyzeText = async (text: string): Promise<Suggestion | null> => {
     return null;
 
   } catch (error) {
-    console.warn("Proactive analysis failed silently:", error);
+    // Silent fail is expected for background tasks
     return null;
+  }
+};
+
+export const getGoalRefinements = async (currentGoal: string): Promise<GoalSuggestion[]> => {
+  try {
+    const ai = getClient();
+    
+    const responseSchema: Schema = {
+      type: Type.OBJECT,
+      properties: {
+        suggestions: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              text: { type: Type.STRING },
+              explanation: { type: Type.STRING }
+            },
+            required: ['text', 'explanation']
+          }
+        }
+      },
+      required: ['suggestions']
+    };
+
+    const prompt = `
+    The user has a rough writing goal: "${currentGoal}".
+    Provide 3 distinct, more specific, and actionable versions of this goal.
+    Explain briefly how each refines the objective.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
+        systemInstruction: "You are a strategic writing coach. Help the user clarify their intent."
+      }
+    });
+
+    const result = JSON.parse(response.text || "{}");
+    return result.suggestions || [];
+  } catch (error) {
+    console.error("Error refining goal:", error);
+    return [];
   }
 };

@@ -4,17 +4,23 @@ export interface Attachment {
   data: string; // Base64
 }
 
-export interface Suggestion {
-  id: string;
-  originalText?: string;
-  suggestedText?: string;
-  reason: string;
-  type: 'improvement' | 'grammar' | 'idea';
+export interface WritingContext {
+  audience: string;
+  tone: string;
+  goal: string;
 }
 
-export enum EditorMode {
-  WRITING = 'WRITING',
-  WAITING = 'WAITING',
+export interface GoalSuggestion {
+  text: string;
+  explanation: string;
+}
+
+export interface Suggestion {
+  id: string;
+  originalText: string; // The exact substring to replace
+  suggestedText: string; // The replacement
+  reason: string;
+  type: 'style' | 'grammar' | 'clarity' | 'flow' | 'idea';
 }
 
 export interface SelectionRange {
