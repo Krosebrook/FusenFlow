@@ -1,50 +1,69 @@
-import { GoogleGenAI, Schema, Type } from "@google/genai";
+
+import { GoogleGenAI, Type } from "@google/genai";
 import { Attachment, Suggestion, WritingContext, GoalSuggestion } from "../types";
 import { MODEL_FAST, MODEL_QUALITY, SYSTEM_INSTRUCTION_EDITOR, SYSTEM_INSTRUCTION_PROACTIVE } from "../constants";
+import { logger } from "./logger";
 
+const MAX_RETRIES = 3;
+
+// Fixed: Simplified to use process.env.API_KEY directly as required by guidelines
 const getClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    console.error("API_KEY is missing from environment variables.");
-    throw new Error("API Key missing");
+  if (!process.env.API_KEY) {
+    logger.error("API_KEY missing from environment");
+    throw new Error("API Key missing. Please check your configuration.");
   }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
+
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    const isRetryable = error.message?.includes('429') || error.message?.includes('503');
+    if (retries > 0 && isRetryable) {
+      const delay = Math.pow(2, MAX_RETRIES - retries + 1) * 1000;
+      logger.warn(`AI Request failed, retrying in ${delay}ms...`, { retriesLeft: retries - 1 });
+      await wait(delay);
+      return withRetry(fn, retries - 1);
+    }
+    throw error;
+  }
+}
 
 export const generateDraft = async (
   prompt: string, 
   attachments: Attachment[] = []
 ): Promise<string> => {
-  try {
+  return withRetry(async () => {
+    logger.info("Generating draft", { promptLength: prompt.length });
+    // Creating new client instance right before usage
     const ai = getClient();
     const parts: any[] = [{ text: prompt }];
     
     attachments.forEach(att => {
       if (att.type.startsWith('image/')) {
         parts.push({
-          inlineData: {
-            mimeType: att.type,
-            data: att.data
-          }
+          inlineData: { mimeType: att.type, data: att.data }
         });
       } else {
-        parts.push({ text: `\n\n[Attachment: ${att.name}]\n${atob(att.data)}` });
+        try {
+          parts.push({ text: `\n\n[Attachment: ${att.name}]\n${atob(att.data)}` });
+        } catch (e) {
+          logger.warn("Could not decode text attachment", { name: att.name });
+        }
       }
     });
 
     const response = await ai.models.generateContent({
       model: MODEL_QUALITY,
       contents: { parts },
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION_EDITOR,
-      }
+      config: { systemInstruction: SYSTEM_INSTRUCTION_EDITOR }
     });
 
     return response.text || "";
-  } catch (error) {
-    console.error("Error generating draft:", error);
-    throw error;
-  }
+  });
 };
 
 export const iterateSelection = async (
@@ -52,31 +71,24 @@ export const iterateSelection = async (
   instruction: string,
   context: string
 ): Promise<string> => {
-  try {
+  return withRetry(async () => {
+    logger.info("Iterating selection", { instruction });
     const ai = getClient();
     const prompt = `
     Full Document Context (for tone reference): "${context.substring(0, 2000)}..."
-    
     Target Text to Change: "${selection}"
-    
     User Instruction: ${instruction}
-    
     Return ONLY the rewritten text. No markdown, no quotes.
     `;
 
     const response = await ai.models.generateContent({
       model: MODEL_FAST,
       contents: prompt,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION_EDITOR,
-      }
+      config: { systemInstruction: SYSTEM_INSTRUCTION_EDITOR }
     });
 
     return response.text?.trim() || selection;
-  } catch (error) {
-    console.error("Error iterating selection:", error);
-    throw error;
-  }
+  });
 };
 
 export const analyzeText = async (fullText: string, context?: WritingContext): Promise<Suggestion | null> => {
@@ -85,7 +97,7 @@ export const analyzeText = async (fullText: string, context?: WritingContext): P
   try {
     const ai = getClient();
     
-    const responseSchema: Schema = {
+    const responseSchema = {
       type: Type.OBJECT,
       properties: {
         hasSuggestion: { type: Type.BOOLEAN },
@@ -100,32 +112,16 @@ export const analyzeText = async (fullText: string, context?: WritingContext): P
       required: ['hasSuggestion']
     };
 
-    const contextLimit = 30000;
-    const textToAnalyze = fullText.length > contextLimit 
-      ? fullText.substring(fullText.length - contextLimit) 
-      : fullText;
-
-    // Construct the context-aware prompt
-    let contextBlock = "";
-    if (context) {
-      contextBlock = `
+    let contextBlock = context ? `
       WRITING CONTEXT:
       - Target Audience: ${context.audience || 'General'}
       - Desired Tone: ${context.tone || 'Neutral'}
       - Primary Goal: ${context.goal || 'Inform'}
-      `;
-    }
-
-    const contents = `
-    ${contextBlock}
-
-    DOCUMENT CONTENT TO ANALYZE:
-    ${textToAnalyze}
-    `;
+    ` : "";
 
     const response = await ai.models.generateContent({
       model: MODEL_FAST,
-      contents: contents,
+      contents: `${contextBlock}\n\nDOCUMENT CONTENT:\n${fullText.substring(0, 10000)}`,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION_PROACTIVE,
         responseMimeType: "application/json",
@@ -134,30 +130,26 @@ export const analyzeText = async (fullText: string, context?: WritingContext): P
     });
 
     const result = JSON.parse(response.text || "{}");
-    
     if (result.hasSuggestion && result.originalText && result.suggestedText) {
       return {
-        id: Date.now().toString(),
+        id: Math.random().toString(36).substring(7),
         originalText: result.originalText,
         suggestedText: result.suggestedText,
         reason: result.reason,
         type: result.type
       };
     }
-    
     return null;
-
   } catch (error) {
-    // Silent fail is expected for background tasks
+    logger.debug("Background analysis skipped or failed", { error });
     return null;
   }
 };
 
 export const getGoalRefinements = async (currentGoal: string): Promise<GoalSuggestion[]> => {
-  try {
+  return withRetry(async () => {
     const ai = getClient();
-    
-    const responseSchema: Schema = {
+    const responseSchema = {
       type: Type.OBJECT,
       properties: {
         suggestions: {
@@ -175,26 +167,16 @@ export const getGoalRefinements = async (currentGoal: string): Promise<GoalSugge
       required: ['suggestions']
     };
 
-    const prompt = `
-    The user has a rough writing goal: "${currentGoal}".
-    Provide 3 distinct, more specific, and actionable versions of this goal.
-    Explain briefly how each refines the objective.
-    `;
-
     const response = await ai.models.generateContent({
       model: MODEL_FAST,
-      contents: prompt,
+      contents: `Refine this goal: "${currentGoal}"`,
       config: {
         responseMimeType: "application/json",
         responseSchema: responseSchema,
-        systemInstruction: "You are a strategic writing coach. Help the user clarify their intent."
+        systemInstruction: "Strategic writing coach mode."
       }
     });
 
-    const result = JSON.parse(response.text || "{}");
-    return result.suggestions || [];
-  } catch (error) {
-    console.error("Error refining goal:", error);
-    return [];
-  }
+    return JSON.parse(response.text || "{}").suggestions || [];
+  });
 };

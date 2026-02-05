@@ -1,4 +1,7 @@
-export const MODEL_FAST = 'gemini-2.5-flash';
+
+// Use recommended model names for basic text tasks
+export const MODEL_FAST = 'gemini-3-flash-preview';
+// Use recommended model name for complex/high-quality tasks
 export const MODEL_QUALITY = 'gemini-3-pro-preview';
 
 export const SYSTEM_INSTRUCTION_EDITOR = `You are an expert editor and writing partner. 

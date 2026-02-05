@@ -10,6 +10,22 @@ export interface WritingContext {
   goal: string;
 }
 
+export interface Document {
+  id: string;
+  title: string;
+  content: string;
+  lastModified: number;
+  writingContext: WritingContext;
+}
+
+export interface Snapshot {
+  id: string;
+  timestamp: number;
+  content: string;
+  label: string;
+  trigger: 'manual' | 'auto' | 'ai-pre-flight';
+}
+
 export interface GoalSuggestion {
   text: string;
   explanation: string;

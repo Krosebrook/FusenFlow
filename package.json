@@ -11,8 +11,13 @@
   "dependencies": {
     "@google/genai": "^1.33.0",
     "react": "^19.2.3",
+    "react-dom": "^19.2.3",
     "lucide-react": "^0.560.0",
-    "react-dom": "^19.2.3"
+    "@tiptap/react": "2.11.5",
+    "@tiptap/starter-kit": "2.11.5",
+    "@tiptap/extension-placeholder": "2.11.5",
+    "jspdf": "2.5.1",
+    "docx": "9.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
