@@ -1,6 +1,7 @@
+
 import { useState, useEffect, useRef } from 'react';
-import { Suggestion, Attachment, SelectionRange, WritingContext, GoalSuggestion } from '../types';
-import { generateDraft, iterateSelection, analyzeText, getGoalRefinements } from '../services/gemini';
+import { Suggestion, Attachment, SelectionRange, WritingContext, GoalSuggestion, ChatMessage } from '../types';
+import { generateDraft, iterateSelection, analyzeText, getGoalRefinements, sendChatMessage } from '../services/gemini';
 
 interface UseMagicAIProps {
   content: string;
@@ -13,6 +14,9 @@ export const useMagicAI = ({ content, isMagicMode, selection, writingContext }: 
   const [isGenerating, setIsGenerating] = useState(false);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Chat State
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
 
   // Debounced Proactive Analysis
   useEffect(() => {
@@ -80,6 +84,43 @@ export const useMagicAI = ({ content, isMagicMode, selection, writingContext }: 
     }
   };
 
+  const sendMessage = async (text: string) => {
+    if (!text.trim()) return;
+    
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      text,
+      timestamp: Date.now()
+    };
+    
+    setChatHistory(prev => [...prev, userMsg]);
+    setIsGenerating(true);
+    
+    try {
+      const responseText = await sendChatMessage(chatHistory, text, content);
+      const botMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: responseText,
+        timestamp: Date.now()
+      };
+      setChatHistory(prev => [...prev, botMsg]);
+    } catch (e) {
+      setError("Failed to send message.");
+      setChatHistory(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'model',
+        text: "I'm having trouble connecting right now. Please try again.",
+        timestamp: Date.now()
+      }]);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const clearChat = () => setChatHistory([]);
+
   return {
     isGenerating,
     suggestion,
@@ -87,6 +128,9 @@ export const useMagicAI = ({ content, isMagicMode, selection, writingContext }: 
     error,
     draftContent,
     refineSelection,
-    refineGoal
+    refineGoal,
+    chatHistory,
+    sendMessage,
+    clearChat
   };
 };

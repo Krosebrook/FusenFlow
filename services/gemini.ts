@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { Attachment, Suggestion, WritingContext, GoalSuggestion } from "../types";
+import { Attachment, Suggestion, WritingContext, GoalSuggestion, ChatMessage } from "../types";
 import { MODEL_FAST, MODEL_QUALITY, SYSTEM_INSTRUCTION_EDITOR, SYSTEM_INSTRUCTION_PROACTIVE } from "../constants";
 import { logger } from "./logger";
 
@@ -178,5 +178,54 @@ export const getGoalRefinements = async (currentGoal: string): Promise<GoalSugge
     });
 
     return JSON.parse(response.text || "{}").suggestions || [];
+  });
+};
+
+export const sendChatMessage = async (
+  history: ChatMessage[], 
+  newMessage: string, 
+  context: string
+): Promise<string> => {
+  return withRetry(async () => {
+    const ai = getClient();
+    
+    // Convert flat internal history to Gemini SDK format
+    const chatHistory = history.map(msg => ({
+      role: msg.role,
+      parts: [{ text: msg.text }]
+    }));
+
+    const chat = ai.chats.create({
+      model: MODEL_QUALITY,
+      history: chatHistory,
+      config: {
+        systemInstruction: `You are a versatile writing companion and editor. 
+        Your capabilities include:
+        1. Brainstorming & Ideation
+        2. Outlining & Structure
+        3. Tone Analysis
+        4. Grammar & Mechanics Check
+        5. Thesaurus & Synonyms
+        6. Fact Verification guidance
+        7. Character Development
+        8. Plot Hole Detection
+        9. Stylistic Rewriting
+        10. Summarization
+        11. Translation
+        12. SEO Keyword optimization
+        13. Formatting assistance (Markdown)
+        14. Title generation
+        15. Writing prompts to unblock writer's block
+
+        ALWAYS answer in the context of the user's current document content provided below.
+        Be concise, helpful, and encouraging.
+        
+        CURRENT DOCUMENT CONTEXT:
+        """${context.substring(0, 10000)}"""`
+      }
+    });
+
+    const response = await chat.sendMessage({ message: newMessage });
+    return response.text || "I couldn't generate a response.";
   });
 };

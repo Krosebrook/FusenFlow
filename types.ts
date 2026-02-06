@@ -1,3 +1,4 @@
+
 export interface Attachment {
   name: string;
   type: string;
@@ -48,4 +49,11 @@ export interface SelectionRange {
 export interface Message {
   role: 'user' | 'model';
   text: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  timestamp: number;
 }

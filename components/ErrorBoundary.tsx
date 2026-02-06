@@ -1,4 +1,3 @@
-
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCcw } from 'lucide-react';
 
@@ -11,11 +10,11 @@ interface State {
   error?: Error;
 }
 
-// Fixed: Use named import for Component and explicit generics to ensure 'props' and 'state' are correctly typed and recognized by the TypeScript compiler
 export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false
-  };
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -51,7 +50,6 @@ export class ErrorBoundary extends Component<Props, State> {
       );
     }
 
-    // Fixed: Accessing children through this.props is now correctly recognized via properly typed inheritance
     return this.props.children;
   }
 }
