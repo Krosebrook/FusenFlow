@@ -1,5 +1,6 @@
+
 import { useState, useEffect, useCallback } from 'react';
-import { WritingContext, Document, Snapshot } from '../types';
+import { WritingContext, Document, Snapshot, ChatMessage, ExpertPrompt } from '../types';
 import { 
   getAllDocuments, 
   saveDocument, 
@@ -14,15 +15,23 @@ import {
 interface UsePersistenceProps {
   content: string;
   writingContext: WritingContext;
+  chatHistory: ChatMessage[];
+  experts: ExpertPrompt[];
   setContent: (c: string) => void;
   setWritingContext: (c: WritingContext) => void;
+  setChatHistory: (h: ChatMessage[]) => void;
+  setExperts: (e: ExpertPrompt[]) => void;
 }
 
 export const usePersistence = ({ 
   content, 
   writingContext, 
+  chatHistory,
+  experts,
   setContent, 
-  setWritingContext 
+  setWritingContext,
+  setChatHistory,
+  setExperts
 }: UsePersistenceProps) => {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [activeDoc, setActiveDoc] = useState<Document | null>(null);
@@ -30,7 +39,6 @@ export const usePersistence = ({
   const [isLoaded, setIsLoaded] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
-  // Actions
   const switchDocument = useCallback((id: string) => {
     const docs = getAllDocuments();
     const doc = docs.find(d => d.id === id);
@@ -39,9 +47,11 @@ export const usePersistence = ({
       setActiveDocId(doc.id);
       setContent(doc.content);
       setWritingContext(doc.writingContext);
+      setChatHistory(doc.chatHistory || []);
+      setExperts(doc.experts || []);
       setHistory(getSnapshots(doc.id));
     }
-  }, [setContent, setWritingContext]);
+  }, [setContent, setWritingContext, setChatHistory, setExperts]);
 
   const createNewDocument = useCallback(() => {
     const newDoc: Document = {
@@ -49,7 +59,9 @@ export const usePersistence = ({
       title: 'Untitled Draft',
       content: '',
       lastModified: Date.now(),
-      writingContext: { audience: '', tone: '', goal: '' }
+      writingContext: { audience: '', tone: '', goal: '' },
+      chatHistory: [],
+      experts: []
     };
     saveDocument(newDoc);
     setDocuments(prev => [newDoc, ...prev]);
@@ -57,7 +69,6 @@ export const usePersistence = ({
     return newDoc;
   }, [switchDocument]);
 
-  // Load initial state
   useEffect(() => {
     const docs = getAllDocuments();
     setDocuments(docs);
@@ -78,13 +89,14 @@ export const usePersistence = ({
       setActiveDoc(currentDoc);
       setContent(currentDoc.content);
       setWritingContext(currentDoc.writingContext);
+      setChatHistory(currentDoc.chatHistory || []);
+      setExperts(currentDoc.experts || []);
       setHistory(getSnapshots(currentDoc.id));
     }
     
     setIsLoaded(true);
-  }, []); // Initial load only
+  }, []);
 
-  // Debounced Save for ACTIVE document
   useEffect(() => {
     if (!isLoaded || !activeDoc) return;
 
@@ -93,8 +105,10 @@ export const usePersistence = ({
         ...activeDoc,
         content,
         writingContext,
+        chatHistory,
+        experts,
         lastModified: Date.now(),
-        title: content.split('\n')[0].substring(0, 40).trim() || 'Untitled Draft'
+        title: content.replace(/<[^>]*>?/gm, '').split('\n')[0].substring(0, 40).trim() || 'Untitled Draft'
       };
       
       saveDocument(updatedDoc);
@@ -103,7 +117,7 @@ export const usePersistence = ({
     }, 1000);
 
     return () => clearTimeout(handler);
-  }, [content, writingContext, isLoaded, activeDoc?.id]);
+  }, [content, writingContext, chatHistory, experts, isLoaded, activeDoc?.id]);
 
   const removeDocument = (id: string) => {
     deleteDocument(id);

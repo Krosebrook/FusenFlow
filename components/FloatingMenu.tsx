@@ -28,7 +28,7 @@ const FloatingMenu: React.FC<FloatingMenuProps> = ({ selection, onClose, onSubmi
         {/* Header / Selection Preview */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-50">
           <span className="text-xs font-medium text-gray-400 uppercase tracking-wider flex items-center gap-1">
-            <Sparkles size={12} className="text-indigo-500" />
+            <Sparkles size={12} className="text-indigo-500" aria-hidden="true" />
             Selected ({selection.text.length} chars)
           </span>
           <button 
@@ -36,7 +36,7 @@ const FloatingMenu: React.FC<FloatingMenuProps> = ({ selection, onClose, onSubmi
             className="p-2 -mr-2 text-gray-400 hover:text-gray-600 transition-colors"
             aria-label="Close Menu"
           >
-            <X size={14} />
+            <X size={14} aria-hidden="true" />
           </button>
         </div>
 
@@ -65,12 +65,12 @@ const FloatingMenu: React.FC<FloatingMenuProps> = ({ selection, onClose, onSubmi
               }`}
               aria-label={isLoading ? "Processing" : "Submit Edit"}
             >
-              {isLoading ? <RefreshCw size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+              {isLoading ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : <ArrowRight size={16} aria-hidden="true" />}
             </button>
         </div>
 
         {/* Quick Actions */}
-        <div className="flex gap-2 overflow-x-auto pb-2 px-2 scrollbar-hide" role="list">
+        <div className="flex gap-2 overflow-x-auto pb-2 px-2 scrollbar-hide" role="list" aria-label="Quick Actions">
           {['Make it punchy', 'Fix grammar', 'Expand', 'Simplify', 'Make professional'].map((action) => (
             <button
               key={action}

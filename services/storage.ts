@@ -27,12 +27,15 @@ export const getAllDocuments = (): Document[] => {
       if (oldSession) {
         try {
           const parsedOld = JSON.parse(oldSession);
+          // Fix: Adding missing chatHistory and experts properties to Document in the migration object
           const migratedDoc: Document = {
             id: generateId(),
             title: 'Migrated Draft',
             content: parsedOld.content || '',
             lastModified: parsedOld.lastModified || Date.now(),
-            writingContext: parsedOld.writingContext || { audience: '', tone: '', goal: '' }
+            writingContext: parsedOld.writingContext || { audience: '', tone: '', goal: '' },
+            chatHistory: [],
+            experts: []
           };
           saveDocument(migratedDoc);
           return [migratedDoc];

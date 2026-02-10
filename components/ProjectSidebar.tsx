@@ -64,7 +64,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
       >
         <div className="p-5 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
           <div className="flex items-center gap-2 font-serif font-bold text-gray-800 dark:text-gray-100">
-            <BookOpen size={20} className="text-indigo-600 dark:text-indigo-400" />
+            <BookOpen size={20} className="text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
             <span>Projects</span>
           </div>
           <button 
@@ -72,50 +72,53 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
             className="lg:hidden p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800 rounded"
             aria-label="Close Project Sidebar"
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2" role="list">
+        <div className="flex-1 overflow-y-auto p-4 space-y-2" role="list" aria-label="Document List">
           {documents.map(doc => (
             <div 
               key={doc.id}
               role="listitem"
-              className={`group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${
+              className={`group flex items-center justify-between p-1 rounded-lg transition-all ${
                 activeDocId === doc.id 
                   ? 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700' 
                   : 'hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
               }`}
-              onClick={() => {
-                onSwitch(doc.id);
-                if (window.innerWidth < 1024) onClose();
-              }}
-              aria-current={activeDocId === doc.id ? 'page' : undefined}
             >
-              <div className="flex-1 min-w-0">
+              <button
+                className="flex-1 min-w-0 p-2 text-left outline-none focus:ring-2 focus:ring-indigo-500 rounded"
+                onClick={() => {
+                  onSwitch(doc.id);
+                  if (window.innerWidth < 1024) onClose();
+                }}
+                aria-current={activeDocId === doc.id ? 'page' : undefined}
+                aria-label={`Open ${doc.title || 'Untitled'}`}
+              >
                 <h3 className={`text-sm font-medium truncate ${
                   activeDocId === doc.id ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-700 dark:text-gray-300'
                 }`}>
                   {doc.title || 'Untitled'}
                 </h3>
                 <p className="text-xs text-gray-400 mt-1 flex items-center gap-2">
-                  <FileText size={10} />
+                  <FileText size={10} aria-hidden="true" />
                   {formatDate(doc.lastModified)}
                 </p>
-              </div>
+              </button>
               
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
                   if(confirm("Are you sure?")) onDelete(doc.id);
                 }}
-                className={`p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100 ${
+                className={`p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100 ${
                   documents.length === 1 ? 'hidden' : ''
                 }`}
                 title="Delete"
                 aria-label={`Delete ${doc.title}`}
               >
-                <Trash2 size={14} />
+                <Trash2 size={14} aria-hidden="true" />
               </button>
             </div>
           ))}
@@ -126,14 +129,14 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
             onClick={() => onCreate()}
             className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-sm transition-colors shadow-sm"
           >
-            <Plus size={16} /> New Document
+            <Plus size={16} aria-hidden="true" /> New Document
           </button>
           
           <button 
             onClick={() => fileInputRef.current?.click()}
             className="w-full flex items-center justify-center gap-2 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm transition-colors"
           >
-            <Upload size={16} /> Import File
+            <Upload size={16} aria-hidden="true" /> Import File
           </button>
           <input 
             type="file" 

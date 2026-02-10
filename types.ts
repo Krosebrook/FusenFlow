@@ -11,12 +11,20 @@ export interface WritingContext {
   goal: string;
 }
 
+export interface ExpertPrompt {
+  id: string;
+  name: string;
+  prompt: string;
+}
+
 export interface Document {
   id: string;
   title: string;
   content: string;
   lastModified: number;
   writingContext: WritingContext;
+  chatHistory: ChatMessage[];
+  experts: ExpertPrompt[];
 }
 
 export interface Snapshot {
@@ -37,17 +45,12 @@ export interface Suggestion {
   originalText: string; // The exact substring to replace
   suggestedText: string; // The replacement
   reason: string;
-  type: 'style' | 'grammar' | 'clarity' | 'flow' | 'idea';
+  type: 'style' | 'grammar' | 'clarity' | 'flow' | 'idea' | 'structure' | 'argument';
 }
 
 export interface SelectionRange {
   start: number;
   end: number;
-  text: string;
-}
-
-export interface Message {
-  role: 'user' | 'model';
   text: string;
 }
 

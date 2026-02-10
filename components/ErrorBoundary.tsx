@@ -2,7 +2,7 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCcw } from 'lucide-react';
 
 interface Props {
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 interface State {
@@ -10,10 +10,20 @@ interface State {
   error?: Error;
 }
 
+/**
+ * ErrorBoundary catches rendering errors in its child component tree.
+ * Explicitly declaring state property ensures compatibility with strict TypeScript configurations.
+ */
 export class ErrorBoundary extends Component<Props, State> {
+  // Explicitly declare state to resolve "Property 'state' does not exist" errors
+  public state: State = { hasError: false };
+
+  // Fix: Explicitly declare props to resolve "Property 'props' does not exist" errors in strict environments
+  public props: Props;
+
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false };
+    this.props = props;
   }
 
   public static getDerivedStateFromError(error: Error): State {
@@ -25,6 +35,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public render() {
+    // Accessing this.state which is now explicitly declared on the class
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 text-center">
@@ -50,6 +61,7 @@ export class ErrorBoundary extends Component<Props, State> {
       );
     }
 
+    // Accessing this.props which is inherited from Component base class
     return this.props.children;
   }
 }

@@ -12,244 +12,152 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useEditor } from './hooks/useEditor';
 import { useMagicAI } from './hooks/useMagicAI';
 import { usePersistence } from './hooks/usePersistence';
-import { Attachment, Suggestion, WritingContext } from './types';
+import { Attachment, Suggestion, WritingContext, ChatMessage, ExpertPrompt } from './types';
 import { logger } from './services/logger';
 
-const AppContent: React.FC = () => {
-  const { 
-    content, 
-    updateContent, 
-    selection, 
-    setSelection, 
-    replaceSelection, 
-    replaceText 
-  } = useEditor();
-
+const AppContent = () => {
+  const { content, updateContent, selection, setSelection, replaceSelection, replaceText } = useEditor();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProjectSidebarOpen, setIsProjectSidebarOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isMagicMode, setIsMagicMode] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  
-  const [writingContext, setWritingContext] = useState<WritingContext>({
-    audience: '',
-    tone: '',
-    goal: ''
-  });
+  const [writingContext, setWritingContext] = useState<WritingContext>({ audience: '', tone: '', goal: '' });
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [experts, setExperts] = useState<ExpertPrompt[]>([]);
 
   const { 
-    isLoaded, 
-    lastSaved, 
-    history, 
-    documents,
-    activeDoc,
-    captureSnapshot, 
-    restoreSnapshot,
-    createNewDocument,
-    switchDocument,
-    removeDocument
-  } = usePersistence({
-    content,
-    writingContext,
-    setContent: updateContent,
-    setWritingContext
-  });
+    isLoaded, lastSaved, history, documents, activeDoc, captureSnapshot, restoreSnapshot, 
+    createNewDocument, switchDocument, removeDocument 
+  } = usePersistence({ content, writingContext, chatHistory, experts, setContent: updateContent, setWritingContext, setChatHistory, setExperts });
 
-  // Updated create handler to support import
+  const { 
+    isGenerating, suggestion, setSuggestion, draftContent, refineSelection, refineGoal, sendMessage, clearChat, activeExpert, setActiveExpert 
+  } = useMagicAI({ content, isMagicMode, selection, writingContext, initialChatHistory: chatHistory, onChatUpdate: setChatHistory });
+
+  useEffect(() => {
+    // Check local storage or system preference on mount
+    const stored = localStorage.getItem('flowstate_theme');
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+    if (stored === 'dark' || (!stored && systemPrefersDark)) {
+      setIsDarkMode(true);
+      document.documentElement.classList.add('dark');
+    } else {
+      setIsDarkMode(false);
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const next = !isDarkMode;
+    setIsDarkMode(next);
+    if (next) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('flowstate_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('flowstate_theme', 'light');
+    }
+  };
+
+  const handleDraft = async (prompt: string, attachments: Attachment[], tools: any) => {
+    try {
+      captureSnapshot(`AI Draft: ${prompt.substring(0, 15)}`, 'ai-pre-flight');
+      const draft = await draftContent(prompt, attachments, tools);
+      updateContent(content ? content + '\n\n' + draft : draft);
+    } catch (e) { logger.error("Drafting error", { e }); }
+  };
+
   const handleCreateDocument = (initialContent: string = '', title?: string) => {
     const newDoc = createNewDocument();
     if (initialContent) {
       updateContent(initialContent);
     }
-    // Note: usePersistence debouncer will handle saving the title/content updates
   };
-
-  useEffect(() => {
-    const storedTheme = localStorage.getItem('flowstate_theme');
-    if (storedTheme === 'dark') {
-      setIsDarkMode(true);
-      document.documentElement.classList.add('dark');
-    }
-    logger.info("Application initialized");
-  }, []);
-
-  const toggleTheme = () => {
-    const newMode = !isDarkMode;
-    setIsDarkMode(newMode);
-    document.documentElement.classList.toggle('dark', newMode);
-    localStorage.setItem('flowstate_theme', newMode ? 'dark' : 'light');
-  };
-
-  const { 
-    isGenerating, 
-    suggestion, 
-    setSuggestion, 
-    draftContent, 
-    refineSelection,
-    refineGoal,
-    chatHistory,
-    sendMessage,
-    clearChat
-  } = useMagicAI({ content, isMagicMode, selection, writingContext });
-
-  const handleDraft = async (prompt: string, attachments: Attachment[]) => {
-    try {
-      captureSnapshot(`Before Draft: "${prompt.substring(0, 20)}..."`, 'ai-pre-flight');
-      const draft = await draftContent(prompt, attachments);
-      updateContent(content ? content + '\n\n' + draft : draft);
-    } catch (e) {
-      logger.error("Drafting failed", { error: e });
-    }
-  };
-
-  const handleInlineEdit = async (instruction: string) => {
-    if (!selection) return;
-    try {
-      captureSnapshot(`Before Inline Edit: "${instruction}"`, 'ai-pre-flight');
-      const newText = await refineSelection(selection, instruction);
-      replaceSelection(newText);
-    } catch (e) {
-      logger.error("Inline edit failed", { error: e });
-    }
-  };
-
-  const handleApplySuggestion = (s: Suggestion) => {
-    captureSnapshot(`Before Suggestion: ${s.type}`, 'ai-pre-flight');
-    const success = replaceText(s.originalText, s.suggestedText);
-    if (success) {
-      setSuggestion(null);
-    } else {
-      logger.warn("Failed to apply suggestion - text changed");
-      alert("Text has changed. Suggestion no longer matches.");
-      setSuggestion(null);
-    }
-  };
-
-  if (!isLoaded) {
-    return (
-      <div role="alert" aria-busy="true" className="min-h-screen flex flex-col items-center justify-center bg-[#FDFCF8] dark:bg-[#1a1a1a]">
-        <div className="flex flex-col items-center gap-4 animate-pulse">
-          <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-            <PenTool size={24} />
-          </div>
-          <p className="text-gray-500 dark:text-gray-400 font-serif italic">Entering FlowState...</p>
-          <Loader2 className="animate-spin text-indigo-500" size={20} />
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className={`min-h-screen flex flex-col relative transition-colors duration-300 ${
-      isDarkMode ? 'bg-[#1a1a1a] text-gray-200' : 'bg-[#FDFCF8] text-gray-900'
-    }`}>
-      
-      <header className="fixed top-0 left-0 right-0 h-16 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 z-30 flex items-center justify-between px-4 md:px-8 transition-all">
+    <div className="min-h-screen flex flex-col transition-colors duration-300 bg-[#FDFCF8] dark:bg-[#1a1a1a] text-gray-900 dark:text-gray-200">
+      <header className="fixed top-0 left-0 right-0 h-16 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 z-30 flex items-center justify-between px-4 md:px-8">
         <div className="flex items-center gap-3">
           <button 
             onClick={() => setIsProjectSidebarOpen(true)} 
-            className="p-2 -ml-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 rounded-lg lg:hidden"
-            aria-label="Open Project Menu"
+            className="p-2 lg:hidden text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+            aria-label="Open Project Sidebar"
           >
-            <Menu size={20} />
+            <Menu size={20} aria-hidden="true" />
           </button>
-          
-          <button 
-            onClick={() => setIsProjectSidebarOpen(!isProjectSidebarOpen)} 
-            className="hidden lg:flex items-center gap-2 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition-colors"
-            aria-label="Toggle Project Sidebar"
-          >
-             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-sm">
-               <PenTool size={18} />
-             </div>
-             <h1 className="text-lg font-serif font-bold tracking-tight">FlowState</h1>
-          </button>
-
+          <div className="hidden lg:flex items-center gap-2 text-indigo-600 font-serif font-bold">
+            <PenTool size={18} aria-hidden="true" /> FlowState
+          </div>
           <span className="text-xs text-gray-300 dark:text-gray-600 ml-2 font-mono hidden md:block" role="status">
             {lastSaved ? `Saved ${lastSaved.toLocaleTimeString()}` : 'Unsaved'}
           </span>
         </div>
-
-        <div className="flex items-center gap-2 md:gap-4">
+        <nav className="flex items-center gap-2">
           <button 
             onClick={toggleTheme} 
-            className="p-2 text-gray-400 hover:text-yellow-500 transition-colors"
-            aria-label="Toggle Theme"
+            className="p-2 text-gray-400 hover:text-indigo-400 transition-colors rounded-lg" 
+            aria-label={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
           >
-            {isDarkMode ? <Moon size={18} /> : <Sun size={18} />}
+            {isDarkMode ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
           </button>
-
-          <div className="h-6 w-px bg-gray-200 dark:bg-gray-700 hidden sm:block"></div>
-
           <button 
-            onClick={() => setIsMagicMode(!isMagicMode)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-              isMagicMode 
-                ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300' 
-                : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'
-            }`}
+            onClick={() => setIsMagicMode(!isMagicMode)} 
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${isMagicMode ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 border-gray-100'}`}
             aria-pressed={isMagicMode}
+            aria-label="Toggle AI Partner Mode"
           >
-            <Zap size={14} className={isMagicMode ? "fill-indigo-700 dark:fill-indigo-300" : ""} />
-            <span className="hidden sm:inline">{isMagicMode ? 'Coach Active' : 'Coach Off'}</span>
+            <Zap size={14} aria-hidden="true" /> Partner Mode
           </button>
-
           <button 
             onClick={() => setIsHistoryOpen(true)} 
-            className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative"
+            className="p-2 text-gray-400 relative hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
             aria-label="View Version History"
           >
-            <History size={20} />
-            {history.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-indigo-500 rounded-full border border-white dark:border-gray-900"></span>}
+            <History size={20} aria-hidden="true" />
+            {history.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full" aria-hidden="true" />}
           </button>
-
           <button 
             onClick={() => setIsSidebarOpen(true)} 
-            className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-            aria-label="Open Assistant Sidebar"
+            className="p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+            aria-label="Open AI Tools"
           >
-            <LayoutTemplate size={20} />
+            <LayoutTemplate size={20} aria-hidden="true" />
           </button>
-        </div>
+        </nav>
       </header>
 
-      <main className="flex-1 pt-20 pb-8 flex flex-col items-center relative overflow-y-auto" role="main">
+      <main id="main-content" className="flex-1 pt-20 pb-8 flex flex-col items-center overflow-y-auto">
         <Editor content={content} setContent={updateContent} onSelectionChange={setSelection} isMagicMode={isMagicMode} />
         {content.length === 0 && (
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center opacity-40 pointer-events-none select-none">
-            <Sparkles className="w-12 h-12 mx-auto mb-4 text-gray-400 dark:text-gray-600" />
+            <Sparkles className="w-12 h-12 mx-auto mb-4 text-gray-400 dark:text-gray-600" aria-hidden="true" />
             <p className="text-xl font-serif text-gray-500 dark:text-gray-400">The canvas is yours.</p>
           </div>
         )}
       </main>
 
       <StatusBar content={content} title={activeDoc?.title || 'Draft'} />
-
       <ProjectSidebar isOpen={isProjectSidebarOpen} onClose={() => setIsProjectSidebarOpen(false)} documents={documents} activeDocId={activeDoc?.id} onSwitch={switchDocument} onCreate={handleCreateDocument} onDelete={removeDocument} />
       <Sidebar 
-        isOpen={isSidebarOpen} 
-        onClose={() => setIsSidebarOpen(false)} 
-        onDraft={handleDraft} 
-        isGenerating={isGenerating} 
-        writingContext={writingContext} 
-        setWritingContext={setWritingContext} 
-        onRefineGoal={refineGoal} 
-        chatHistory={chatHistory}
-        onSendMessage={sendMessage}
-        onClearChat={clearChat}
+        isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onDraft={handleDraft} isGenerating={isGenerating} 
+        writingContext={writingContext} setWritingContext={setWritingContext} onRefineGoal={refineGoal} 
+        chatHistory={chatHistory} onSendMessage={sendMessage} onClearChat={clearChat} experts={experts} 
+        setExperts={setExperts} activeExpert={activeExpert} setActiveExpert={setActiveExpert} docContent={content}
       />
-      <HistoryPanel isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} history={history} onRestore={restoreSnapshot} />
-
-      {selection && <FloatingMenu selection={selection} onClose={() => setSelection(null)} onSubmit={handleInlineEdit} isLoading={isGenerating} />}
-      {isMagicMode && suggestion && !selection && <ProactivePanel suggestion={suggestion} onApply={handleApplySuggestion} onDismiss={() => setSuggestion(null)} />}
+      <HistoryPanel 
+        isOpen={isHistoryOpen} 
+        onClose={() => setIsHistoryOpen(false)} 
+        history={history} 
+        onRestore={restoreSnapshot}
+        onSnapshot={(label) => captureSnapshot(label, 'manual')}
+      />
+      {selection && <FloatingMenu selection={selection} onClose={() => setSelection(null)} onSubmit={async (inst) => { captureSnapshot(inst, 'ai-pre-flight'); replaceSelection(await refineSelection(selection, inst)); }} isLoading={isGenerating} />}
+      {isMagicMode && suggestion && !selection && <ProactivePanel suggestion={suggestion} onApply={s => replaceText(s.originalText, s.suggestedText)} onDismiss={() => setSuggestion(null)} />}
     </div>
   );
 };
 
-const App: React.FC = () => (
-  <ErrorBoundary>
-    <AppContent />
-  </ErrorBoundary>
-);
-
+const App = () => (<ErrorBoundary><AppContent /></ErrorBoundary>);
 export default App;
