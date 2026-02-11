@@ -71,7 +71,7 @@ const FloatingMenu: React.FC<FloatingMenuProps> = ({ selection, onClose, onSubmi
 
         {/* Quick Actions */}
         <div className="flex gap-2 overflow-x-auto pb-2 px-2 scrollbar-hide" role="list" aria-label="Quick Actions">
-          {['Make it punchy', 'Fix grammar', 'Expand', 'Simplify', 'Make professional'].map((action) => (
+          {['Summarize', 'Make it punchy', 'Fix grammar', 'Expand', 'Simplify', 'Make professional'].map((action) => (
             <button
               key={action}
               onClick={() => handleQuickAction(action)}

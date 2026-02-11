@@ -13,11 +13,17 @@ export const useLivePartner = () => {
   const stop = useCallback(() => {
     if (sessionRef.current) sessionRef.current.close();
     setIsActive(false);
+    if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+    }
   }, []);
 
   const start = useCallback(async (systemInstruction: string) => {
+    if (!process.env.API_KEY) return;
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    audioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
     const outputNode = audioContextRef.current.createGain();
     outputNode.connect(audioContextRef.current.destination);
 
@@ -28,15 +34,25 @@ export const useLivePartner = () => {
       callbacks: {
         onopen: () => {
           setIsActive(true);
-          const inputCtx = new AudioContext({ sampleRate: 16000 });
+          const inputCtx = new AudioContextClass({ sampleRate: 16000 });
           const source = inputCtx.createMediaStreamSource(stream);
           const processor = inputCtx.createScriptProcessor(4096, 1, 1);
           processor.onaudioprocess = (e) => {
             const input = e.inputBuffer.getChannelData(0);
             const int16 = new Int16Array(input.length);
             for (let i = 0; i < input.length; i++) int16[i] = input[i] * 32768;
+            
+            // Safe manual base64 encoding to avoid stack overflow with large spread arrays
+            let binary = '';
+            const bytes = new Uint8Array(int16.buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            const b64 = btoa(binary);
+
             sessionPromise.then(s => s.sendRealtimeInput({ 
-              media: { data: btoa(String.fromCharCode(...new Uint8Array(int16.buffer))), mimeType: 'audio/pcm;rate=16000' } 
+              media: { data: b64, mimeType: 'audio/pcm;rate=16000' } 
             }));
           };
           source.connect(processor);

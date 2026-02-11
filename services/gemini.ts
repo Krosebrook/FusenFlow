@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { Attachment, Suggestion, WritingContext, GoalSuggestion, ChatMessage, ExpertPrompt } from "../types";
+import { Attachment, Suggestion, WritingContext, GoalSuggestion, ChatMessage, ExpertPrompt, OutlineItem } from "../types";
 import { 
   MODEL_FAST, MODEL_QUALITY, MODEL_LITE, MODEL_MAPS, MODEL_TTS,
   SYSTEM_INSTRUCTION_EDITOR, SYSTEM_INSTRUCTION_PROACTIVE 
@@ -26,18 +26,41 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promis
   }
 }
 
+// Helper to safely decode base64 to UTF-8 string
+const decodeBase64ToString = (base64: string): string => {
+  try {
+    const binString = atob(base64);
+    const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0) || 0);
+    return new TextDecoder().decode(bytes);
+  } catch (e) {
+    return atob(base64); // Fallback
+  }
+};
+
 export const generateDraft = async (
   prompt: string, 
   attachments: Attachment[] = [],
   tools: { search?: boolean, maps?: boolean } = {},
   activeExpert?: ExpertPrompt,
-  context: string = ""
+  context: string = "",
+  writingContext?: WritingContext
 ): Promise<string> => {
   return withRetry(async () => {
     const ai = getClient();
     
     const parts: any[] = [];
     
+    // Inject Writing Context if available
+    if (writingContext) {
+       parts.push({ text: `
+         WRITING CONFIGURATION:
+         - Goal: ${writingContext.goal || "Not specified"}
+         - Format: ${writingContext.format || "Open format"}
+         - Audience: ${writingContext.audience || "General"}
+         - Tone: ${writingContext.tone || "Neutral"}
+       `});
+    }
+
     if (context) {
       parts.push({ text: `EXISTING DOCUMENT CONTEXT:\n\"\"\"\n${context.substring(0, 50000)}\n\"\"\"\n\n` });
     }
@@ -45,10 +68,17 @@ export const generateDraft = async (
     parts.push({ text: `INSTRUCTION: ${prompt}\n\nTask: Generate new content that integrates perfectly with the existing context above. Focus on maintaining the established tone and logical flow.` });
     
     attachments.forEach(att => {
-      if (att.type.startsWith('image/') || att.type.startsWith('video/')) {
+      // PDF and Images/Videos are treated as inlineData for multimodal processing
+      if (att.type.startsWith('image/') || att.type.startsWith('video/') || att.type === 'application/pdf') {
         parts.push({ inlineData: { mimeType: att.type, data: att.data } });
       } else {
-        try { parts.push({ text: `\n\n[Additional Ref: ${att.name}]\n${atob(att.data)}` }); } catch (e) {}
+        // Text files are decoded and appended as context
+        try { 
+          const decodedText = decodeBase64ToString(att.data);
+          parts.push({ text: `\n\n[Additional Ref: ${att.name}]\n${decodedText}` }); 
+        } catch (e) {
+          console.warn(`Failed to decode attachment ${att.name}`, e);
+        }
       }
     });
 
@@ -77,6 +107,147 @@ export const generateDraft = async (
       if (urls.length > 0) text += `\n\nSources: ${[...new Set(urls)].join(', ')}`;
     }
     return text;
+  });
+};
+
+export const generateBrainstorming = async (content: string, context: WritingContext): Promise<string> => {
+  return withRetry(async () => {
+    const ai = getClient();
+    
+    const contextStr = `
+      GOAL: ${context.goal || "Write a compelling piece"}
+      FORMAT: ${context.format || "Open format"}
+      AUDIENCE: ${context.audience || "General Audience"}
+      TONE: ${context.tone || "Creative"}
+    `;
+
+    const prompt = `
+      You are a creative muse and brainstorming partner.
+      
+      CONTEXT:
+      ${contextStr}
+      
+      CURRENT CONTENT (Snippet):
+      """
+      ${content.substring(0, 20000) || "(No content yet)"}
+      """
+      
+      TASK:
+      Generate 5 distinct, creative ideas to help the user move forward. 
+      These can be:
+      - Plot twists or narrative beats
+      - Character details or conflicts
+      - Thematic expansions
+      - Metaphors or imagery to explore
+      
+      Format the output as a concise, inspiring Markdown list. Do not write the draft itself, just the ideas.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: MODEL_QUALITY,
+      contents: [{ parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction: "You are a highly creative brainstorming partner. Focus on divergent thinking and novel connections.",
+        temperature: 0.9 // Higher temperature for creativity
+      }
+    });
+
+    return response.text || "I couldn't generate ideas right now. Try adjusting your goal.";
+  });
+};
+
+export const generateSummary = async (text: string, context: WritingContext): Promise<string> => {
+  return withRetry(async () => {
+    const ai = getClient();
+    const contextStr = `
+      WRITING CONTEXT:
+      - Goal: ${context.goal || "Not specified"}
+      - Format: ${context.format || "General"}
+      - Audience: ${context.audience || "General"}
+      - Tone: ${context.tone || "Neutral"}
+    `;
+
+    const prompt = `
+      You are an expert editor.
+      
+      CONTEXT:
+      ${contextStr}
+      
+      TEXT TO SUMMARIZE:
+      """
+      ${text.substring(0, 100000)}
+      """
+      
+      TASK:
+      Provide a concise summary of the text above. 
+      The summary should be tailored to the stated writing goal and audience.
+      Highlight the key narrative arcs, arguments, or themes.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST,
+      contents: [{ parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION_EDITOR,
+      }
+    });
+
+    return response.text || "Could not generate summary.";
+  });
+};
+
+export const generateOutline = async (text: string, context: WritingContext): Promise<OutlineItem[]> => {
+  return withRetry(async () => {
+    const ai = getClient();
+    const contextStr = `
+      WRITING CONTEXT:
+      - Goal: ${context.goal || "Not specified"}
+      - Format: ${context.format || "General"}
+      - Audience: ${context.audience || "General"}
+      - Tone: ${context.tone || "Neutral"}
+    `;
+
+    const prompt = `
+      Analyze the provided document and create a logical, hierarchical outline. 
+      The outline should represent the document's structure, reflecting the stated writing goal and format.
+      
+      ${contextStr}
+      
+      DOCUMENT CONTENT:
+      """
+      ${text.substring(0, 80000)}
+      """
+      
+      Output ONLY a JSON array of objects. Each object must have:
+      - level (integer, 1 for main sections, 2 for subsections, etc.)
+      - text (string, the label for that section)
+    `;
+
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST,
+      contents: [{ parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              level: { type: Type.INTEGER },
+              text: { type: Type.STRING }
+            },
+            required: ['level', 'text']
+          }
+        }
+      }
+    });
+
+    try {
+      return JSON.parse(response.text || "[]");
+    } catch (e) {
+      console.error("Failed to parse outline JSON", e);
+      return [];
+    }
   });
 };
 
@@ -116,7 +287,8 @@ export const sendChatMessage = async (
   newMessage: string, 
   context: string,
   attachments: Attachment[] = [],
-  options: { thinking?: boolean, expert?: ExpertPrompt } = {}
+  options: { thinking?: boolean, expert?: ExpertPrompt, search?: boolean } = {},
+  writingContext?: WritingContext
 ): Promise<string> => {
   return withRetry(async () => {
     const ai = getClient();
@@ -126,7 +298,20 @@ export const sendChatMessage = async (
       ? `Your Persona: ${options.expert.name}. Directive: ${options.expert.prompt}` 
       : "You are a helpful writing partner.";
 
+    let writingContextStr = "";
+    if (writingContext) {
+      writingContextStr = `
+      WRITING CONFIGURATION:
+      - Goal: ${writingContext.goal || "Not specified"}
+      - Format: ${writingContext.format || "Open format"}
+      - Audience: ${writingContext.audience || "General"}
+      - Tone: ${writingContext.tone || "Neutral"}
+      `;
+    }
+
     const systemInstruction = `${expertContext}
+
+    ${writingContextStr}
     
     CURRENT DOCUMENT CONTEXT (The user is writing this):
     """
@@ -147,16 +332,37 @@ export const sendChatMessage = async (
       config.thinkingConfig = { thinkingBudget: 32768 };
     }
 
+    if (options.search) {
+      config.tools = [{ googleSearch: {} }];
+    }
+
     const parts: any[] = [{ text: newMessage }];
     attachments.forEach(att => {
-      if (att.type.startsWith('image/') || att.type.startsWith('video/')) {
+      // PDF and Images/Videos are treated as inlineData for multimodal processing
+      if (att.type.startsWith('image/') || att.type.startsWith('video/') || att.type === 'application/pdf') {
         parts.push({ inlineData: { mimeType: att.type, data: att.data } });
+      } else {
+        // Text files are decoded and appended as context
+        try { 
+          const decodedText = decodeBase64ToString(att.data);
+          parts.push({ text: `\n\n[Additional Ref: ${att.name}]\n${decodedText}` }); 
+        } catch (e) {
+          console.warn(`Failed to decode attachment ${att.name}`, e);
+        }
       }
     });
 
     const chat = ai.chats.create({ model: MODEL_QUALITY, history: chatHistory, config });
     const response = await chat.sendMessage({ message: { parts } });
-    return response.text || "";
+    
+    let text = response.text || "";
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    if (chunks) {
+      const urls = chunks.map((c: any) => c.web?.uri || c.maps?.uri).filter(Boolean);
+      if (urls.length > 0) text += `\n\nSources: ${[...new Set(urls)].join(', ')}`;
+    }
+
+    return text;
   });
 };
 
@@ -168,15 +374,17 @@ export const analyzeText = async (fullText: string, context?: WritingContext): P
     let contextStr = "";
     if (context) {
       contextStr = `
-      User Goal: ${context.goal || "Not specified"}
-      Target Audience: ${context.audience || "General"}
-      Desired Tone: ${context.tone || "Neutral"}
+      WRITING CONTEXT:
+      - Goal: ${context.goal || "Create a compelling piece"}
+      - Format: ${context.format || "General text"}
+      - Audience: ${context.audience || "General reader"}
+      - Tone: ${context.tone || "Professional yet engaging"}
       `;
     }
 
     const response = await ai.models.generateContent({
       model: MODEL_FAST,
-      contents: `CONTEXT: ${contextStr}\n\nDOCUMENT:\n${fullText.substring(0, 50000)}\n\nAnalyze the entire document. Find a nuanced improvement that elevates the piece.`,
+      contents: `${contextStr}\n\nFULL DOCUMENT CONTENT:\n${fullText.substring(0, 50000)}\n\nINSTRUCTION: Analyze the document structure, arguments, and flow based on the Writing Context. Identify the single most critical weakness (e.g., a logic gap, a weak transition, a missed counter-argument, or inconsistent tone) and propose a concrete fix.`,
       config: { 
         systemInstruction: SYSTEM_INSTRUCTION_PROACTIVE,
         responseMimeType: "application/json",
@@ -184,10 +392,10 @@ export const analyzeText = async (fullText: string, context?: WritingContext): P
           type: Type.OBJECT,
           properties: {
             hasSuggestion: { type: Type.BOOLEAN },
-            originalText: { type: Type.STRING, description: "The specific text to change. Must be a direct quote from the document." },
-            suggestedText: { type: Type.STRING, description: "The nuanced, context-aware replacement." },
-            reason: { type: Type.STRING, description: "A high-level explanation of how this change improves the whole document arc." },
-            type: { type: Type.STRING, enum: ['Structure', 'Tone', 'Clarity', 'Argument', 'Flow'] }
+            originalText: { type: Type.STRING, description: "The exact text segment (sentence or paragraph) to be improved." },
+            suggestedText: { type: Type.STRING, description: "The improved version of the text." },
+            reason: { type: Type.STRING, description: "A concise explanation of why this change improves the document's structure, argument, or flow." },
+            type: { type: Type.STRING, enum: ['Structure', 'Tone', 'Clarity', 'Argument', 'Flow', 'Style'] }
           }
         }
       }
@@ -200,14 +408,32 @@ export const analyzeText = async (fullText: string, context?: WritingContext): P
   }
 };
 
-export const iterateSelection = async (text: string, instruction: string, context: string): Promise<string> => {
+export const iterateSelection = async (
+  text: string, 
+  instruction: string, 
+  context: string,
+  writingContext?: WritingContext
+): Promise<string> => {
   return withRetry(async () => {
     const ai = getClient();
+
+    let writingContextStr = "";
+    if (writingContext) {
+      writingContextStr = `
+      WRITING CONFIGURATION:
+      - Goal: ${writingContext.goal || "Not specified"}
+      - Format: ${writingContext.format || "Open format"}
+      - Audience: ${writingContext.audience || "General"}
+      - Tone: ${writingContext.tone || "Neutral"}
+      `;
+    }
+
     const response = await ai.models.generateContent({
       model: MODEL_QUALITY,
       contents: {
         parts: [
           { text: `FULL DOCUMENT CONTEXT:\n\"\"\"\n${context.substring(0, 30000)}\n\"\"\"\n\n` },
+          { text: writingContextStr },
           { text: `SPECIFIC SELECTION TO REWRITE: "${text}"` },
           { text: `INSTRUCTION: ${instruction}\n\nTask: Rewrite the selection so it achieves the goal while integrating perfectly with the surrounding context and overall document style.` }
         ]

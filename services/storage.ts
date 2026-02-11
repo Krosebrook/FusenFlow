@@ -33,7 +33,7 @@ export const getAllDocuments = (): Document[] => {
             title: 'Migrated Draft',
             content: parsedOld.content || '',
             lastModified: parsedOld.lastModified || Date.now(),
-            writingContext: parsedOld.writingContext || { audience: '', tone: '', goal: '' },
+            writingContext: parsedOld.writingContext || { audience: '', tone: '', goal: '', format: '' },
             chatHistory: [],
             experts: []
           };

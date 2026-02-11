@@ -9,6 +9,7 @@ export interface WritingContext {
   audience: string;
   tone: string;
   goal: string;
+  format: string;
 }
 
 export interface ExpertPrompt {
@@ -40,12 +41,17 @@ export interface GoalSuggestion {
   explanation: string;
 }
 
+export interface OutlineItem {
+  level: number;
+  text: string;
+}
+
 export interface Suggestion {
   id: string;
   originalText: string; // The exact substring to replace
   suggestedText: string; // The replacement
   reason: string;
-  type: 'style' | 'grammar' | 'clarity' | 'flow' | 'idea' | 'structure' | 'argument';
+  type: 'Structure' | 'Tone' | 'Clarity' | 'Argument' | 'Flow' | 'Style' | 'style' | 'grammar' | 'clarity' | 'flow' | 'idea' | 'structure' | 'argument';
 }
 
 export interface SelectionRange {

@@ -48,7 +48,7 @@ const ProactivePanel: React.FC<ProactivePanelProps> = ({ suggestion, onApply, on
           </p>
           
           {/* Diff View */}
-          <div className="bg-gray-50 rounded-lg border border-gray-100 text-sm font-serif p-3 space-y-2">
+          <div className="bg-gray-50 rounded-lg border border-gray-100 text-sm font-serif p-3 space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
              <div className="text-red-800 line-through decoration-red-300 decoration-2 opacity-60 text-xs" aria-label="Original text">
                 {suggestion.originalText}
              </div>

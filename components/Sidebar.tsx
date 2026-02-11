@@ -1,12 +1,14 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Attachment, WritingContext, GoalSuggestion, ChatMessage, ExpertPrompt } from '../types';
+import { Attachment, WritingContext, GoalSuggestion, ChatMessage, ExpertPrompt, OutlineItem } from '../types';
 import { 
   X, Paperclip, Send, Target, Wand2, Globe, User, Bot, Trash2, Plus, Users, 
   Lightbulb, Layout, Type as TypeIcon, Search, Maximize2, Minimize2, Hash, 
   Mic, Zap, Brain, MapPin, Volume2, StopCircle, UserCog, MessageSquare, Sparkles,
   BookOpen, Feather, PenTool, CheckCircle, GraduationCap, FileText, FileImage, File as FileIcon, Loader2,
-  GitBranch, Users as UsersIcon, Activity, Wind, Layers
+  GitBranch, Users as UsersIcon, Activity, Wind, Layers, Eye, Timer, Fingerprint, Scissors,
+  Anchor, Ghost, Heart, Scale, Music, Crosshair, Film, AudioLines, GitCompare, TrendingUp,
+  ChevronDown, ChevronRight, ListTree, RefreshCw
 } from 'lucide-react';
 import { generateSpeech, transcribeAudio } from '../services/gemini';
 import { useLivePartner } from '../hooks/useLivePartner';
@@ -28,6 +30,10 @@ interface SidebarProps {
   activeExpert: ExpertPrompt | undefined;
   setActiveExpert: (e: ExpertPrompt | undefined) => void;
   docContent: string;
+  onBrainstorm: () => void;
+  onSummarize: () => void;
+  outline: OutlineItem[];
+  onFetchOutline: () => void;
 }
 
 const ExpertIcon = ({ id }: { id: string }) => {
@@ -51,7 +57,23 @@ const ExpertIcon = ({ id }: { id: string }) => {
     research: Globe,
     sum: FileText,
     finish: CheckCircle,
-    coach: UserCog
+    coach: UserCog,
+    dialogue: MessageSquare,
+    senses: Eye,
+    pacing: Timer,
+    motive: Fingerprint,
+    cliche: Scissors,
+    hook: Anchor,
+    subtext: Ghost,
+    emotion: Heart,
+    lawyer: Scale,
+    rhythm: Music,
+    // New Experts
+    pov: Crosshair,
+    show: Film,
+    voice: AudioLines,
+    foil: GitCompare,
+    stakes: TrendingUp
   };
   const Icon = icons[id] || UserCog;
   return <Icon size={16} aria-hidden="true" />;
@@ -67,9 +89,10 @@ const FileIconIndicator = ({ type }: { type: string }) => {
 const Sidebar: React.FC<SidebarProps> = ({ 
   isOpen, onClose, onDraft, isGenerating, writingContext, setWritingContext, 
   onRefineGoal, chatHistory, onSendMessage, onClearChat, experts, setExperts, 
-  activeExpert, setActiveExpert, docContent
+  activeExpert, setActiveExpert, docContent, onBrainstorm, onSummarize,
+  outline, onFetchOutline
 }) => {
-  const [activeTab, setActiveTab] = useState<'draft' | 'chat' | 'experts'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'draft' | 'experts'>('chat');
   const [prompt, setPrompt] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [useSearch, setUseSearch] = useState(false);
@@ -77,6 +100,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [useThinking, setUseThinking] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('Thinking...');
+  const [isOutlineOpen, setIsOutlineOpen] = useState(true);
   
   const { isActive: isLiveActive, start: startLive, stop: stopLive } = useLivePartner();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -86,22 +110,105 @@ const Sidebar: React.FC<SidebarProps> = ({
   // Status cycling for "Thinking" state
   useEffect(() => {
     if (isGenerating) {
-      const statuses = [
+      let statuses = [
+        'Thinking...',
         'Analyzing context...',
-        'Synthesizing ideas...',
-        'Checking plot coherence...',
-        'Polishing prose...',
-        'Deepening resonance...',
-        'Evaluating character arcs...'
+        'Generating response...',
+        'Consulting knowledge base...',
+        'Formulating answer...',
+        'Polishing output...'
       ];
+
+      // Context-aware statuses based on the active expert
+      if (activeExpert) {
+        switch (activeExpert.id) {
+          case 'plot':
+            statuses = ['Tracing narrative threads...', 'Checking causality...', 'Identifying plot holes...', 'Verifying logic...'];
+            break;
+          case 'critic':
+            statuses = ['Auditing logic...', 'Finding contradictions...', 'Stress-testing arguments...', 'Reviewing premises...'];
+            break;
+          case 'muse':
+            statuses = ['Connecting unrelated ideas...', 'Generating metaphors...', 'Thinking laterally...', 'Brainstorming twists...'];
+            break;
+          case 'polish':
+            statuses = ['Smoothing rhythm...', 'Enhancing vocabulary...', 'Checking cadence...', 'Refining tone...'];
+            break;
+          case 'arc':
+            statuses = ['Analyzing motivations...', 'Mapping emotional journeys...', 'Checking agency...', 'Reviewing stakes...'];
+            break;
+          case 'world':
+            statuses = ['Checking consistency...', 'Verifying lore...', 'Building atmosphere...', 'Reviewing rules...'];
+            break;
+          case 'tension':
+            statuses = ['Analyzing pacing...', 'Measuring stakes...', 'Checking urgency...', 'Reviewing conflict...'];
+            break;
+          case 'simple':
+            statuses = ['Simplifying syntax...', 'Reducing jargon...', 'Clarifying meaning...', 'Optimizing flow...'];
+            break;
+          case 'academic':
+            statuses = ['Checking formality...', 'Structuring arguments...', 'Reviewing citations...', 'Verifying rigor...'];
+            break;
+          case 'seo':
+            statuses = ['Analyzing keywords...', 'Checking headings...', 'Optimizing density...', 'Reviewing readability...'];
+            break;
+          case 'dialogue':
+            statuses = ['Listening to speech patterns...', 'Checking subtext...', 'Verifying character voice...', 'Analyzing exchanges...'];
+            break;
+          case 'senses':
+            statuses = ['Checking sensory details...', 'Analyzing immersion...', 'Reviewing "show, don\'t tell"...', 'Enhancing imagery...'];
+            break;
+          case 'pacing':
+            statuses = ['Analyzing rhythm...', 'Checking scene length...', 'Measuring narrative speed...', 'Reviewing flow...'];
+            break;
+          case 'motive':
+            statuses = ['Checking agency...', 'Analyzing drivers...', 'Verifying internal logic...', 'Reviewing character choices...'];
+            break;
+          case 'cliche':
+            statuses = ['Hunting tropes...', 'Checking originality...', 'Analyzing phrasing...', 'Identifying overuse...'];
+            break;
+          case 'hook':
+            statuses = ['Checking the opening...', 'Measuring curiosity...', 'Analyzing cliffhangers...', 'Reviewing engagement...'];
+            break;
+          case 'subtext':
+            statuses = ['Reading between lines...', 'Identifying unspoken tension...', 'Checking layers...', 'Analyzing nuance...'];
+            break;
+          case 'emotion':
+            statuses = ['Measuring resonance...', 'Checking reader impact...', 'Analyzing feelings...', 'Reviewing empathy...'];
+            break;
+          case 'lawyer':
+            statuses = ['Cross-examining arguments...', 'Identifying fallacies...', 'Stress-testing logic...', 'Challenging premises...'];
+            break;
+          case 'rhythm':
+            statuses = ['Listening to cadence...', 'Checking flow...', 'Analyzing phonetics...', 'Reviewing musicality...'];
+            break;
+          case 'pov':
+            statuses = ['Checking narrative distance...', 'Scanning for head-hopping...', 'Verifying perspective consistency...', 'Checking point of view...'];
+            break;
+          case 'show':
+            statuses = ['Detecting exposition dumps...', 'Looking for sensory opportunities...', 'Analyzing summary vs scene...', 'Enhancing imagery...'];
+            break;
+          case 'voice':
+            statuses = ['Sampling character speech...', 'Comparing idiolects...', 'Checking dialogue distinctiveness...', 'Analyzing tone...'];
+            break;
+          case 'foil':
+            statuses = ['Mapping character contrasts...', 'Analyzing relationship dynamics...', 'Checking for dramatic foils...', 'Reviewing interactions...'];
+            break;
+          case 'stakes':
+            statuses = ['Measuring consequences...', 'Evaluating risk levels...', 'Checking narrative escalation...', 'Analyzing conflict...'];
+            break;
+        }
+      }
+
+      setProcessingStatus(statuses[0]);
       let i = 0;
       const interval = setInterval(() => {
-        setProcessingStatus(statuses[i % statuses.length]);
         i++;
+        setProcessingStatus(statuses[i % statuses.length]);
       }, 2500);
       return () => clearInterval(interval);
     }
-  }, [isGenerating]);
+  }, [isGenerating, activeExpert]);
 
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -118,17 +225,23 @@ const Sidebar: React.FC<SidebarProps> = ({
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const recorder = new MediaRecorder(stream);
         const chunks: Blob[] = [];
-        // Add explicit type for BlobEvent to ensure data property is recognized
         recorder.ondataavailable = (e: BlobEvent) => chunks.push(e.data);
         recorder.onstop = async () => {
           const blob = new Blob(chunks, { type: 'audio/webm' });
           const reader = new FileReader();
           reader.onload = async () => {
             const b64 = (reader.result as string).split(',')[1];
+            // Show processing state while transcribing
+            setProcessingStatus('Transcribing audio...');
             const text = await transcribeAudio(b64, 'audio/webm');
-            setPrompt(prev => prev + " " + text);
+            setPrompt(prev => {
+              const newPrompt = prev.trim() ? `${prev} ${text}` : text;
+              return newPrompt;
+            });
           };
           reader.readAsDataURL(blob);
+          // Stop tracks to release mic
+          stream.getTracks().forEach(track => track.stop());
         };
         recorder.start();
         mediaRecorderRef.current = recorder;
@@ -142,7 +255,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    // Fix: Explicitly type 'file' as 'File' to resolve 'unknown' property errors (name, type, readAsDataURL)
     Array.from(files).forEach((file: File) => {
       const reader = new FileReader();
       reader.onload = (ev) => {
@@ -154,11 +266,13 @@ const Sidebar: React.FC<SidebarProps> = ({
       };
       reader.readAsDataURL(file);
     });
+    // Reset input to allow selecting the same file again if needed
+    if (e.target) e.target.value = '';
   };
 
   const handleSendMessage = () => {
     if (!prompt.trim() && attachments.length === 0) return;
-    onSendMessage(prompt, attachments, { thinking: useThinking });
+    onSendMessage(prompt, attachments, { thinking: useThinking, search: useSearch });
     setPrompt('');
     setAttachments([]);
   };
@@ -234,6 +348,48 @@ const Sidebar: React.FC<SidebarProps> = ({
 
           {activeTab === 'draft' && (
             <div className="space-y-6">
+              {/* Outline Section */}
+              <div className="border border-gray-100 dark:border-gray-800 rounded-2xl overflow-hidden">
+                <button 
+                  onClick={() => setIsOutlineOpen(!isOutlineOpen)}
+                  className="w-full flex items-center justify-between p-4 bg-gray-50/50 dark:bg-gray-800/30 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    <ListTree size={12} className="text-indigo-500" /> Document Outline
+                  </div>
+                  {isOutlineOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </button>
+                {isOutlineOpen && (
+                  <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 animate-fade-in">
+                    {outline.length > 0 ? (
+                      <div className="space-y-2 mb-4 max-h-60 overflow-y-auto custom-scrollbar">
+                        {outline.map((item, idx) => (
+                          <div 
+                            key={idx} 
+                            style={{ paddingLeft: `${(item.level - 1) * 1}rem` }}
+                            className={`text-xs ${item.level === 1 ? 'font-bold text-gray-800 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400 font-medium'}`}
+                          >
+                            {item.level === 1 ? '• ' : '- '}{item.text}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-[10px] text-gray-400 italic">
+                        No outline generated yet.
+                      </div>
+                    )}
+                    <button 
+                      onClick={onFetchOutline}
+                      disabled={isGenerating || !docContent || docContent === '<p></p>'}
+                      className="w-full flex items-center justify-center gap-2 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-[10px] font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all disabled:opacity-50"
+                    >
+                      {isGenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      {outline.length > 0 ? 'Refresh Outline' : 'Generate Outline'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <section className="space-y-3">
                 <label className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
                   <Target size={12} /> Writing Goal
@@ -243,6 +399,17 @@ const Sidebar: React.FC<SidebarProps> = ({
                   placeholder="What is the objective of this piece?"
                   value={writingContext.goal}
                   onChange={e => setWritingContext({...writingContext, goal: e.target.value})}
+                />
+              </section>
+
+              <section className="space-y-2">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Format</label>
+                <input 
+                  type="text" 
+                  className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800 rounded-lg p-2 text-sm outline-none focus:border-indigo-500"
+                  placeholder="e.g. Blog Post, Essay, Email"
+                  value={writingContext.format}
+                  onChange={e => setWritingContext({...writingContext, format: e.target.value})}
                 />
               </section>
 
@@ -270,6 +437,19 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
 
               <section className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Reference Materials</span>
+                </div>
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 py-3 border border-dashed border-gray-300 dark:border-gray-700 rounded-xl text-xs font-medium text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:border-indigo-300 transition-all"
+                >
+                  <Paperclip size={14} />
+                  Attach context (PDF, Text, Images)
+                </button>
+              </section>
+
+              <section className="pt-4 border-t border-gray-100 dark:border-gray-800">
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Knowledge Tools</span>
                   <div className="flex gap-2">
@@ -288,6 +468,36 @@ const Sidebar: React.FC<SidebarProps> = ({
                       <MapPin size={16}/>
                     </button>
                   </div>
+                </div>
+              </section>
+
+              <section className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">AI Tools</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    onClick={() => {
+                      onBrainstorm();
+                      setActiveTab('chat');
+                    }}
+                    disabled={isGenerating}
+                    className="flex items-center justify-center gap-2 py-2.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                  >
+                    <Lightbulb size={14} />
+                    Generate Ideas
+                  </button>
+                  <button 
+                    onClick={() => {
+                      onSummarize();
+                      setActiveTab('chat');
+                    }}
+                    disabled={isGenerating}
+                    className="flex items-center justify-center gap-2 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-lg text-xs font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <FileText size={14} />
+                    Summarize Doc
+                  </button>
                 </div>
               </section>
             </div>
@@ -333,9 +543,12 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
           
           <div className="relative group">
+            {isRecording && (
+                <div className="absolute inset-0 rounded-2xl border-2 border-red-500/50 animate-pulse pointer-events-none z-10" />
+            )}
             <textarea 
-              className="w-full bg-white dark:bg-gray-900 rounded-2xl p-4 pr-12 text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all min-h-[120px] shadow-sm resize-none"
-              placeholder={activeTab === 'draft' ? "Describe what needs to be drafted..." : "Brainstorm with your partner..."}
+              className={`w-full bg-white dark:bg-gray-900 rounded-2xl p-4 pr-12 text-sm outline-none border border-gray-200 dark:border-gray-700 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all min-h-[120px] shadow-sm resize-none ${isRecording ? 'ring-2 ring-red-500/20 border-red-500/50' : ''}`}
+              placeholder={isRecording ? "Listening..." : (activeTab === 'draft' ? "Describe what needs to be drafted..." : "Brainstorm with your partner...")}
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { 
@@ -345,7 +558,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 } 
               }}
             />
-            <div className="absolute right-3 bottom-3 flex flex-col gap-2 opacity-60 group-focus-within:opacity-100 transition-opacity">
+            <div className="absolute right-3 bottom-3 flex flex-col gap-2 opacity-60 group-focus-within:opacity-100 transition-opacity z-20">
               <div className="relative">
                 {isRecording && (
                   <div className="absolute inset-0 bg-red-500/20 rounded-xl animate-ping pointer-events-none"></div>
@@ -378,15 +591,30 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
             </div>
           </div>
-          <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileUpload} />
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            multiple 
+            accept=".txt,.md,.pdf,image/*" 
+            onChange={handleFileUpload} 
+          />
           
           <div className="mt-3 flex items-center justify-between px-2">
-            <button 
-              onClick={() => setUseThinking(!useThinking)}
-              className={`text-[10px] font-bold flex items-center gap-1.5 transition-colors ${useThinking ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}
-            >
-              <Brain size={12} /> Deep Reasoning {useThinking ? 'ON' : 'OFF'}
-            </button>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setUseThinking(!useThinking)}
+                className={`text-[10px] font-bold flex items-center gap-1.5 transition-colors ${useThinking ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}
+              >
+                <Brain size={12} /> Deep Reasoning {useThinking ? 'ON' : 'OFF'}
+              </button>
+              <button 
+                onClick={() => setUseSearch(!useSearch)}
+                className={`text-[10px] font-bold flex items-center gap-1.5 transition-colors ${useThinking ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}
+              >
+                <Globe size={12} /> Search {useSearch ? 'ON' : 'OFF'}
+              </button>
+            </div>
             <div className="flex gap-4">
                {activeTab === 'chat' && chatHistory.length > 0 && (
                  <button onClick={onClearChat} className="text-[10px] font-bold text-gray-400 hover:text-red-500 flex items-center gap-1.5">

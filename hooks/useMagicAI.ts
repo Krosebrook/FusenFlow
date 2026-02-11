@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { Suggestion, Attachment, SelectionRange, WritingContext, GoalSuggestion, ChatMessage, ExpertPrompt } from '../types';
-import { generateDraft, iterateSelection, analyzeText, getGoalRefinements, sendChatMessage } from '../services/gemini';
+import { Suggestion, Attachment, SelectionRange, WritingContext, GoalSuggestion, ChatMessage, ExpertPrompt, OutlineItem } from '../types';
+import { generateDraft, iterateSelection, analyzeText, getGoalRefinements, sendChatMessage, generateBrainstorming, generateSummary, generateOutline } from '../services/gemini';
 import { logger } from '../services/logger';
 
 interface UseMagicAIProps {
@@ -25,6 +25,7 @@ export const useMagicAI = ({
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeExpert, setActiveExpert] = useState<ExpertPrompt | undefined>(undefined);
+  const [outline, setOutline] = useState<OutlineItem[]>([]);
   
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>(initialChatHistory);
 
@@ -66,7 +67,8 @@ export const useMagicAI = ({
     setIsGenerating(true);
     setError(null);
     try {
-      const result = await generateDraft(prompt, attachments, tools, activeExpert, content);
+      // Pass writingContext to generateDraft
+      const result = await generateDraft(prompt, attachments, tools, activeExpert, content, writingContext);
       return result;
     } catch (e) {
       setError("Failed to draft content.");
@@ -81,7 +83,7 @@ export const useMagicAI = ({
     setIsGenerating(true);
     setError(null);
     try {
-      const result = await iterateSelection(sel.text, instruction, content);
+      const result = await iterateSelection(sel.text, instruction, content, writingContext);
       return result;
     } catch (e) {
       setError("Failed to refine selection.");
@@ -106,7 +108,94 @@ export const useMagicAI = ({
     }
   };
 
-  const sendMessage = async (text: string, attachments: Attachment[] = [], options: { thinking?: boolean, expert?: ExpertPrompt } = {}) => {
+  const brainstorm = async () => {
+    setIsGenerating(true);
+    setError(null);
+    
+    // Add user intent marker
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: "Brainstorm some ideas for me based on my current work and goal.",
+      timestamp: Date.now()
+    };
+    const tempHistory = [...chatHistory, userMsg];
+    setChatHistory(tempHistory);
+    onChatUpdate(tempHistory);
+
+    try {
+      const ideas = await generateBrainstorming(content, writingContext);
+      
+      const botMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: ideas,
+        timestamp: Date.now()
+      };
+      
+      const finalHistory = [...tempHistory, botMsg];
+      setChatHistory(finalHistory);
+      onChatUpdate(finalHistory);
+    } catch (e) {
+      setError("Failed to brainstorm.");
+      logger.error("Brainstorm Error", { error: e });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const summarize = async () => {
+    setIsGenerating(true);
+    setError(null);
+    
+    // Add user intent marker
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: "Summarize this document for me.",
+      timestamp: Date.now()
+    };
+    const tempHistory = [...chatHistory, userMsg];
+    setChatHistory(tempHistory);
+    onChatUpdate(tempHistory);
+
+    try {
+      const summary = await generateSummary(content, writingContext);
+      
+      const botMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: summary,
+        timestamp: Date.now()
+      };
+      
+      const finalHistory = [...tempHistory, botMsg];
+      setChatHistory(finalHistory);
+      onChatUpdate(finalHistory);
+    } catch (e) {
+      setError("Failed to summarize.");
+      logger.error("Summarize Error", { error: e });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const fetchOutline = async () => {
+    if (!content || content === '<p></p>') return;
+    setIsGenerating(true);
+    setError(null);
+    try {
+      const result = await generateOutline(content, writingContext);
+      setOutline(result);
+    } catch (e) {
+      setError("Failed to generate outline.");
+      logger.error("Outline Generation Error", { error: e });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const sendMessage = async (text: string, attachments: Attachment[] = [], options: { thinking?: boolean, expert?: ExpertPrompt, search?: boolean } = {}) => {
     if (!text.trim() && attachments.length === 0) return;
     
     const userMsg: ChatMessage = {
@@ -125,7 +214,11 @@ export const useMagicAI = ({
     
     try {
       // Pass content as context to the chat
-      const responseText = await sendChatMessage(chatHistory, text, content, attachments, { thinking: options.thinking, expert: options.expert || activeExpert });
+      const responseText = await sendChatMessage(chatHistory, text, content, attachments, { 
+        thinking: options.thinking, 
+        expert: options.expert || activeExpert,
+        search: options.search
+      }, writingContext);
       const botMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'model',
@@ -166,6 +259,10 @@ export const useMagicAI = ({
     draftContent,
     refineSelection,
     refineGoal,
+    brainstorm,
+    summarize,
+    outline,
+    fetchOutline,
     chatHistory,
     sendMessage,
     clearChat,

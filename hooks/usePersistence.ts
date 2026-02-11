@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { WritingContext, Document, Snapshot, ChatMessage, ExpertPrompt } from '../types';
 import { 
@@ -59,7 +58,7 @@ export const usePersistence = ({
       title: 'Untitled Draft',
       content: '',
       lastModified: Date.now(),
-      writingContext: { audience: '', tone: '', goal: '' },
+      writingContext: { audience: '', tone: '', goal: '', format: '' },
       chatHistory: [],
       experts: []
     };

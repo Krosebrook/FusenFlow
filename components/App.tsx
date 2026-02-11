@@ -22,7 +22,7 @@ const AppContent = () => {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isMagicMode, setIsMagicMode] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [writingContext, setWritingContext] = useState<WritingContext>({ audience: '', tone: '', goal: '' });
+  const [writingContext, setWritingContext] = useState<WritingContext>({ audience: '', tone: '', goal: '', format: '' });
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [experts, setExperts] = useState<ExpertPrompt[]>([]);
 
@@ -32,7 +32,7 @@ const AppContent = () => {
   } = usePersistence({ content, writingContext, chatHistory, experts, setContent: updateContent, setWritingContext, setChatHistory, setExperts });
 
   const { 
-    isGenerating, suggestion, setSuggestion, draftContent, refineSelection, refineGoal, sendMessage, clearChat, activeExpert, setActiveExpert 
+    isGenerating, suggestion, setSuggestion, draftContent, refineSelection, refineGoal, brainstorm, summarize, outline, fetchOutline, sendMessage, clearChat, activeExpert, setActiveExpert 
   } = useMagicAI({ content, isMagicMode, selection, writingContext, initialChatHistory: chatHistory, onChatUpdate: setChatHistory });
 
   useEffect(() => {
@@ -145,6 +145,10 @@ const AppContent = () => {
         writingContext={writingContext} setWritingContext={setWritingContext} onRefineGoal={refineGoal} 
         chatHistory={chatHistory} onSendMessage={sendMessage} onClearChat={clearChat} experts={experts} 
         setExperts={setExperts} activeExpert={activeExpert} setActiveExpert={setActiveExpert} docContent={content}
+        onBrainstorm={brainstorm}
+        onSummarize={summarize}
+        outline={outline}
+        onFetchOutline={fetchOutline}
       />
       <HistoryPanel 
         isOpen={isHistoryOpen} 
